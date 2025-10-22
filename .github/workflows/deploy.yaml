@@ -1,0 +1,124 @@
+name: Build and Deploy to AKS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # 수동 실행 가능
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  IMAGE_NAME: myapp
+  AKS_CLUSTER: ${{ secrets.AKS_CLUSTER_NAME }}
+  AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. 코드 체크아웃
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    # 2. Azure 로그인
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    # 3. ACR 로그인
+    - name: Login to Azure Container Registry
+      run: |
+        az acr login --name ${{ secrets.ACR_NAME }}
+    
+    # 4. Docker 이미지 빌드
+    - name: Build Docker Image
+      run: |
+        IMAGE_TAG="${{ github.sha }}"
+        echo "Building image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+        
+        cd app
+        docker build \
+          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
+          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:latest \
+          .
+    
+    # 5. ACR에 이미지 푸시
+    - name: Push Image to ACR
+      run: |
+        IMAGE_TAG="${{ github.sha }}"
+        echo "Pushing image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG
+        
+        echo "Pushing image: $ACR_LOGIN_SERVER/$IMAGE_NAME:latest"
+        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:latest
+    
+    # 6. AKS Context 설정
+    - name: Set AKS Context
+      uses: azure/aks-set-context@v3
+      with:
+        cluster-name: ${{ env.AKS_CLUSTER }}
+        resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+    
+    # 7. Kubernetes Secret 생성/업데이트 (Storage Account)
+    - name: Create/Update Kubernetes Secret
+      run: |
+        kubectl create secret generic azure-storage-secret \
+          --from-literal=azurestorageaccountname=${{ secrets.STORAGE_ACCOUNT_NAME }} \
+          --from-literal=azurestorageaccountkey=${{ secrets.STORAGE_ACCOUNT_KEY }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+    
+    # 8. StorageClass 배포
+    - name: Deploy StorageClass
+      run: |
+        kubectl apply -f k8s/storageclass.yaml
+    
+    # 9. PVC 배포
+    - name: Deploy PVC
+      run: |
+        kubectl apply -f k8s/pvc.yaml
+    
+    # 10. Deployment 배포 (이미지 태그 업데이트)
+    - name: Deploy to AKS
+      run: |
+        IMAGE_TAG="${{ github.sha }}"
+        
+        # Deployment가 존재하지 않으면 생성
+        if ! kubectl get deployment app-deployment > /dev/null 2>&1; then
+          echo "Creating new deployment..."
+          kubectl apply -f k8s/deployment.yaml
+        fi
+        
+        # 이미지 업데이트
+        kubectl set image deployment/app-deployment \
+          app=$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
+          --record
+        
+        echo "Deployment updated with image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+    
+    # 11. Service 배포
+    - name: Deploy Service
+      run: |
+        kubectl apply -f k8s/service.yaml
+    
+    # 12. Rollout 상태 확인
+    - name: Check Rollout Status
+      run: |
+        kubectl rollout status deployment/app-deployment --timeout=5m
+        echo "Deployment completed successfully!"
+    
+    # 13. 배포 결과 출력
+    - name: Display Deployment Info
+      run: |
+        echo "=== Pods ==="
+        kubectl get pods -l app=myapp
+        
+        echo ""
+        echo "=== Services ==="
+        kubectl get svc app-service
+        
+        echo ""
+        echo "=== PVC ==="
+        kubectl get pvc blob-pvc
