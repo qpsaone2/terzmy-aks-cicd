@@ -3,10 +3,13 @@ kind: PersistentVolumeClaim
 metadata:
   name: blob-pvc
   namespace: dev
+  labels:
+    app: myapp
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: azureblob-fuse-premium
+  storageClassName: ""  # 빈 문자열: StorageClass 사용 안 함
+  volumeName: blob-pv-static  # PV 이름 직접 지정
   resources:
     requests:
       storage: 10Gi

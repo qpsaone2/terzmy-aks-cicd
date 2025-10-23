@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: blob-pv-static
+  labels:
+    app: myapp
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain  # 중요: PV 삭제해도 데이터 보존
+  storageClassName: ""  # StorageClass 사용 안 함
+  csi:
+    driver: blob.csi.azure.com
+    readOnly: false
+    volumeHandle: static-blob-volume-handle  # Unique ID
+    volumeAttributes:
+      protocol: fuse
+      containerName: app-data
+    nodeStageSecretRef:
+      name: azure-storage-secret
+      namespace: dev

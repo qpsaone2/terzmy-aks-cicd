@@ -15,6 +15,8 @@ env:
   AKS_CLUSTER: ${{ secrets.AKS_CLUSTER_NAME }}
   AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
   NAMESPACE: dev
+  STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+  STORAGE_ACCOUNT_KEY: ${{ secrets.STORAGE_ACCOUNT_KEY }}
 
 jobs:
   build:
@@ -155,9 +157,23 @@ jobs:
           echo "✅ StorageClass already exists"
         fi
     
+    - name: Deploy PersistentVolume
+      run: |
+        if ! kubectl get pv blob-pv-static > /dev/null 2>&1; then
+          echo "Creating Static PersistentVolume..."
+          kubectl apply -f k8s/pv.yaml
+        else
+          echo "✅ PersistentVolume already exists"
+        fi
+    
     - name: Deploy PVC
       run: |
         kubectl apply -f k8s/pvc.yaml
+        
+        # PVC가 Bound 될 때까지 대기
+        echo "Waiting for PVC to be Bound..."
+        kubectl wait --for=condition=Bound pvc/blob-pvc -n dev --timeout=60s || \
+          (kubectl describe pvc blob-pvc -n dev && exit 1)
     
     - name: Deploy Application
       run: |
