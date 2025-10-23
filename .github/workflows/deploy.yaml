@@ -186,15 +186,10 @@ jobs:
       run: |
         VERSION_TAG="${{ needs.build.outputs.version_tag }}"
         
-        if ! kubectl get deployment app-deployment -n $NAMESPACE > /dev/null 2>&1; then
-          echo "Creating new deployment..."
-          kubectl apply -f k8s/deployment.yaml
-        fi
+        # deployment.yaml의 이미지 태그 업데이트
+        sed -i "s|image: terzmyacr.azurecr.io/myapp:.*|image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$VERSION_TAG|g" k8s/deployment.yaml
         
-        kubectl set image deployment/app-deployment \
-          app=$ACR_LOGIN_SERVER/$IMAGE_NAME:$VERSION_TAG \
-          --namespace=$NAMESPACE \
-          --record
+        kubectl apply -f k8s/deployment.yaml
         
         echo "✅ Deployed version: $VERSION_TAG"
     
