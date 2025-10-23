@@ -137,7 +137,13 @@ jobs:
     # 13. StorageClass 배포
     - name: Deploy StorageClass
       run: |
-        kubectl apply -f k8s/storageclass.yaml
+        # 존재 여부만 확인하고 없으면 생성
+        if ! kubectl get storageclass azureblob-fuse-premium > /dev/null 2>&1; then
+          echo "Creating StorageClass..."
+          kubectl create -f k8s/storageclass.yaml
+        else
+          echo "✅ StorageClass already exists. Using existing one."
+        fi
     
     # 14. PVC 배포
     - name: Deploy PVC
