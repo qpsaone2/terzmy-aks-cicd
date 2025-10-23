@@ -1,12 +1,7 @@
 name: Build and Deploy to AKS
 
 on:
-  # push 후 자동 실행
-  # push:
-  #   branches:
-  #     - main
-
-  # 수동 실행 
+  # 수동 실행만 가능
   workflow_dispatch:
     inputs:
       environment:
@@ -20,6 +15,7 @@ env:
   IMAGE_NAME: myapp
   AKS_CLUSTER: ${{ secrets.AKS_CLUSTER_NAME }}
   AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  NAMESPACE: dev
 
 jobs:
   build-and-deploy:
@@ -62,19 +58,16 @@ jobs:
         
         echo "Pushing image: $ACR_LOGIN_SERVER/$IMAGE_NAME:latest"
         docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:latest
-
-    # 6. kubelogin 설치 (Azure AD 인증용) ★ 추가
+    
+    # 6. kubelogin 설치 (Azure AD 인증용)
     - name: Install kubelogin
       run: |
-        # kubelogin 다운로드 및 설치
         curl -LO https://github.com/Azure/kubelogin/releases/download/v0.1.4/kubelogin-linux-amd64.zip
         unzip kubelogin-linux-amd64.zip
         sudo mv bin/linux_amd64/kubelogin /usr/local/bin/
         sudo chmod +x /usr/local/bin/kubelogin
-        
-        # 설치 확인
-        kubelogin --version    
-
+        kubelogin --version
+    
     # 7. AKS Context 설정
     - name: Set AKS Context
       uses: azure/aks-set-context@v3
@@ -82,63 +75,108 @@ jobs:
         cluster-name: ${{ env.AKS_CLUSTER }}
         resource-group: ${{ env.AKS_RESOURCE_GROUP }}
     
-    # 8. Kubernetes Secret 생성/업데이트 (Storage Account)
+    # 8. kubeconfig 변환 (Azure AD 인증)
+    - name: Convert kubeconfig for Azure AD
+      run: |
+        kubelogin convert-kubeconfig -l azurecli
+    
+    # 9. Kubernetes 연결 테스트
+    - name: Test Kubernetes Connection
+      run: |
+        kubectl cluster-info
+        kubectl get nodes
+    
+    # 10. Namespace 생성
+    - name: Create Namespace
+      run: |
+        echo "Creating namespace: $NAMESPACE"
+        kubectl apply -f k8s/namespace.yaml
+        kubectl get namespace $NAMESPACE
+    
+    # 11. Kubernetes Secret 생성/업데이트 (Storage Account)
     - name: Create/Update Kubernetes Secret
       run: |
         kubectl create secret generic azure-storage-secret \
+          --namespace=$NAMESPACE \
           --from-literal=azurestorageaccountname=${{ secrets.STORAGE_ACCOUNT_NAME }} \
           --from-literal=azurestorageaccountkey=${{ secrets.STORAGE_ACCOUNT_KEY }} \
           --dry-run=client -o yaml | kubectl apply -f -
+        
+        echo "Secret created in namespace: $NAMESPACE"
     
-    # 9. StorageClass 배포
+    # 12. StorageClass 배포 (클러스터 레벨)
     - name: Deploy StorageClass
       run: |
         kubectl apply -f k8s/storageclass.yaml
+        echo "StorageClass deployed"
     
-    # 10. PVC 배포
+    # 13. PVC 배포
     - name: Deploy PVC
       run: |
         kubectl apply -f k8s/pvc.yaml
+        echo "PVC deployed in namespace: $NAMESPACE"
+        kubectl get pvc -n $NAMESPACE
     
-    # 11. Deployment 배포 (이미지 태그 업데이트)
+    # 14. Deployment 배포 (이미지 태그 업데이트)
     - name: Deploy to AKS
       run: |
         IMAGE_TAG="${{ github.sha }}"
         
         # Deployment가 존재하지 않으면 생성
-        if ! kubectl get deployment app-deployment > /dev/null 2>&1; then
-          echo "Creating new deployment..."
+        if ! kubectl get deployment app-deployment -n $NAMESPACE > /dev/null 2>&1; then
+          echo "Creating new deployment in namespace: $NAMESPACE"
           kubectl apply -f k8s/deployment.yaml
         fi
         
         # 이미지 업데이트
         kubectl set image deployment/app-deployment \
           app=$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
+          --namespace=$NAMESPACE \
           --record
         
         echo "Deployment updated with image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
     
-    # 12. Service 배포
+    # 15. Service 배포
     - name: Deploy Service
       run: |
         kubectl apply -f k8s/service.yaml
+        echo "Service deployed in namespace: $NAMESPACE"
     
-    # 13. Rollout 상태 확인
+    # 16. Rollout 상태 확인
     - name: Check Rollout Status
       run: |
-        kubectl rollout status deployment/app-deployment --timeout=5m
+        kubectl rollout status deployment/app-deployment -n $NAMESPACE --timeout=5m
         echo "Deployment completed successfully!"
     
-    # 14. 배포 결과 출력
+    # 17. 배포 결과 출력
     - name: Display Deployment Info
       run: |
+        echo "=========================================="
+        echo "Deployment Info - Namespace: $NAMESPACE"
+        echo "=========================================="
+        
+        echo ""
         echo "=== Pods ==="
-        kubectl get pods -l app=myapp
+        kubectl get pods -n $NAMESPACE -l app=myapp -o wide
         
         echo ""
         echo "=== Services ==="
-        kubectl get svc app-service
+        kubectl get svc app-service -n $NAMESPACE
         
         echo ""
         echo "=== PVC ==="
-        kubectl get pvc blob-pvc
+        kubectl get pvc -n $NAMESPACE
+        
+        echo ""
+        echo "=== External IP (LoadBalancer) ==="
+        EXTERNAL_IP=$(kubectl get svc app-service -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        if [ -z "$EXTERNAL_IP" ]; then
+          echo "⏳ External IP is being assigned... Please wait a few minutes."
+        else
+          echo "✅ External IP: $EXTERNAL_IP"
+          echo "🌐 Access URL: http://$EXTERNAL_IP"
+        fi
+        
+        echo ""
+        echo "=== Namespace Resources ==="
+        kubectl get all -n $NAMESPACE

@@ -2,7 +2,15 @@ apiVersion: v1
 kind: Service
 metadata:
   name: app-service
-  namespace: default
+  namespace: dev
+  annotations:
+    # 현재는 External LoadBalancer (테스트용)
+    # 나중에 Internal LB로 변경 시 아래 주석 해제
+    # service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    # service.beta.kubernetes.io/azure-load-balancer-internal-subnet: "snet-aks"
+  labels:
+    app: myapp
+    environment: dev
 spec:
   type: LoadBalancer
   selector:
@@ -11,3 +19,4 @@ spec:
   - protocol: TCP
     port: 80
     targetPort: 8080
+    name: http
