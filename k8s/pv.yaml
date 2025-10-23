@@ -10,14 +10,16 @@ spec:
   accessModes:
     - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""
+  storageClassName: ""  # ← 빈 문자열 (StorageClass 사용 안 함)
   csi:
     driver: blob.csi.azure.com
     readOnly: false
-    volumeHandle: static-blob-pv-handle  # Unique ID만 있으면 됨
+    volumeHandle: terzmyaksstg_app-data  # ← 고유한 ID
     volumeAttributes:
       protocol: fuse
-      containerName: app-data  # Container만 지정
+      containerName: app-data
+      secretName: azure-storage-secret
+      secretNamespace: dev
     nodeStageSecretRef:
-      name: azure-storage-secret 
+      name: azure-storage-secret
       namespace: dev
