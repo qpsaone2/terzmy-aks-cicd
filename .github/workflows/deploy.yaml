@@ -170,10 +170,17 @@ jobs:
       run: |
         kubectl apply -f k8s/pvc.yaml
         
-        # PVC가 Bound 될 때까지 대기
-        echo "Waiting for PVC to be Bound..."
-        kubectl wait --for=condition=Bound pvc/blob-pvc -n dev --timeout=60s || \
-          (kubectl describe pvc blob-pvc -n dev && exit 1)
+        # 잠시 대기 후 상태 확인
+        sleep 3
+        PVC_STATUS=$(kubectl get pvc blob-pvc -n dev -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        
+        if [ "$PVC_STATUS" = "Bound" ]; then
+          echo "✅ PVC is already Bound"
+        else
+          echo "⏳ Waiting for PVC to be Bound..."
+          kubectl wait --for=condition=Bound pvc/blob-pvc -n dev --timeout=60s || \
+            (kubectl describe pvc blob-pvc -n dev && exit 1)
+        fi
     
     - name: Deploy Application
       run: |

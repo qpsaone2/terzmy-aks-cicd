@@ -1,15 +1,25 @@
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: PersistentVolume
 metadata:
-  name: blob-pvc
-  namespace: dev
+  name: blob-pv-static
   labels:
     app: myapp
 spec:
+  capacity:
+    storage: 10Gi
   accessModes:
     - ReadWriteMany
-  storageClassName: ""  # 빈 문자열: StorageClass 사용 안 함
-  volumeName: blob-pv-static  # PV 이름 직접 지정
-  resources:
-    requests:
-      storage: 10Gi
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  csi:
+    driver: blob.csi.azure.com
+    readOnly: false
+    volumeHandle: static-blob-pv-handle
+    volumeAttributes:
+      protocol: fuse
+      containerName: app-data
+      secretName: azure-storage-secret      
+      secretNamespace: dev                  
+    nodeStageSecretRef:
+      name: azure-storage-secret
+      namespace: dev
