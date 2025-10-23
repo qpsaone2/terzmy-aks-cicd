@@ -1,0 +1,119 @@
+name: Build and Push Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_deploy:
+        description: 'Skip deployment (only build)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - '.github/workflows/build.yaml'
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  IMAGE_NAME: myapp
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version_tag: ${{ steps.version.outputs.VERSION_TAG }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Generate Version Tag
+      id: version
+      run: |
+        LATEST_VERSION=$(az acr repository show-tags \
+          --name ${{ secrets.ACR_NAME }} \
+          --repository $IMAGE_NAME \
+          --orderby time_desc \
+          --output tsv 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+        
+        if [ -z "$LATEST_VERSION" ]; then
+          NEW_VERSION="v1.0.1"
+        else
+          MAJOR=$(echo $LATEST_VERSION | cut -d. -f1 | sed 's/v//')
+          MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
+          PATCH=$(echo $LATEST_VERSION | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+        fi
+        
+        echo "VERSION_TAG=${NEW_VERSION}" >> $GITHUB_OUTPUT
+        echo "New version: ${NEW_VERSION}"
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Login to ACR
+      run: |
+        az acr login --name ${{ secrets.ACR_NAME }}
+    
+    - name: Build Docker Image
+      run: |
+        cd app
+        docker build \
+          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:latest \
+          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }} \
+          .
+        
+        echo "Built images:"
+        echo "  - latest"
+        echo "  - ${{ steps.version.outputs.VERSION_TAG }}"
+    
+    - name: Push Image to ACR
+      run: |
+        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:latest
+        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }}
+        
+        echo "Pushed to ACR: ${{ steps.version.outputs.VERSION_TAG }}"
+    
+    - name: Summary
+      run: |
+        echo "=========================================="
+        echo "Build Successful!"
+        echo "=========================================="
+        echo ""
+        echo "Version: ${{ steps.version.outputs.VERSION_TAG }}"
+        echo "Registry: $ACR_LOGIN_SERVER/$IMAGE_NAME"
+        echo ""
+        
+        az acr repository show-tags \
+          --name ${{ secrets.ACR_NAME }} \
+          --repository $IMAGE_NAME \
+          --orderby time_desc \
+          --output table | head -10
+
+  trigger_deploy:
+    needs: build
+    if: ${{ !inputs.skip_deploy }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Trigger Deploy Workflow
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'deploy.yaml',
+            ref: 'main',
+            inputs: {
+              version_tag: '${{ needs.build.outputs.version_tag }}'
+            }
+          });
+          console.log('Deploy workflow triggered with version: ${{ needs.build.outputs.version_tag }}');
