@@ -9,15 +9,15 @@ spec:
     storage: 10Gi
   accessModes:
     - ReadWriteMany
-  persistentVolumeReclaimPolicy: Retain  # 중요: PV 삭제해도 데이터 보존
-  storageClassName: ""  # StorageClass 사용 안 함
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
   csi:
     driver: blob.csi.azure.com
     readOnly: false
-    volumeHandle: static-blob-volume-handle  # Unique ID
+    volumeHandle: static-blob-pv-handle  # Unique ID만 있으면 됨
     volumeAttributes:
       protocol: fuse
-      containerName: app-data
+      containerName: app-data  # Container만 지정
     nodeStageSecretRef:
-      name: azure-storage-secret
+      name: azure-storage-secret 
       namespace: dev
