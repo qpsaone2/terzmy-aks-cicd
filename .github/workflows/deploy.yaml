@@ -1,10 +1,18 @@
 name: Build and Deploy to AKS
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:  # 수동 실행 가능
+  # push 후 자동 실행
+  # push:
+  #   branches:
+  #     - main
+
+  # 수동 실행 
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'dev'
 
 env:
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
@@ -54,15 +62,27 @@ jobs:
         
         echo "Pushing image: $ACR_LOGIN_SERVER/$IMAGE_NAME:latest"
         docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:latest
-    
-    # 6. AKS Context 설정
+
+    # 6. kubelogin 설치 (Azure AD 인증용) ★ 추가
+    - name: Install kubelogin
+      run: |
+        # kubelogin 다운로드 및 설치
+        curl -LO https://github.com/Azure/kubelogin/releases/download/v0.1.4/kubelogin-linux-amd64.zip
+        unzip kubelogin-linux-amd64.zip
+        sudo mv bin/linux_amd64/kubelogin /usr/local/bin/
+        sudo chmod +x /usr/local/bin/kubelogin
+        
+        # 설치 확인
+        kubelogin --version    
+
+    # 7. AKS Context 설정
     - name: Set AKS Context
       uses: azure/aks-set-context@v3
       with:
         cluster-name: ${{ env.AKS_CLUSTER }}
         resource-group: ${{ env.AKS_RESOURCE_GROUP }}
     
-    # 7. Kubernetes Secret 생성/업데이트 (Storage Account)
+    # 8. Kubernetes Secret 생성/업데이트 (Storage Account)
     - name: Create/Update Kubernetes Secret
       run: |
         kubectl create secret generic azure-storage-secret \
@@ -70,17 +90,17 @@ jobs:
           --from-literal=azurestorageaccountkey=${{ secrets.STORAGE_ACCOUNT_KEY }} \
           --dry-run=client -o yaml | kubectl apply -f -
     
-    # 8. StorageClass 배포
+    # 9. StorageClass 배포
     - name: Deploy StorageClass
       run: |
         kubectl apply -f k8s/storageclass.yaml
     
-    # 9. PVC 배포
+    # 10. PVC 배포
     - name: Deploy PVC
       run: |
         kubectl apply -f k8s/pvc.yaml
     
-    # 10. Deployment 배포 (이미지 태그 업데이트)
+    # 11. Deployment 배포 (이미지 태그 업데이트)
     - name: Deploy to AKS
       run: |
         IMAGE_TAG="${{ github.sha }}"
@@ -98,18 +118,18 @@ jobs:
         
         echo "Deployment updated with image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
     
-    # 11. Service 배포
+    # 12. Service 배포
     - name: Deploy Service
       run: |
         kubectl apply -f k8s/service.yaml
     
-    # 12. Rollout 상태 확인
+    # 13. Rollout 상태 확인
     - name: Check Rollout Status
       run: |
         kubectl rollout status deployment/app-deployment --timeout=5m
         echo "Deployment completed successfully!"
     
-    # 13. 배포 결과 출력
+    # 14. 배포 결과 출력
     - name: Display Deployment Info
       run: |
         echo "=== Pods ==="
