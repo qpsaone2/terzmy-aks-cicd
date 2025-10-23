@@ -17,9 +17,14 @@ spec:
         app: myapp
         environment: dev
     spec:
+
+      # NodeSelector: agentpool02에만 배포
+      nodeSelector:
+        agentpool: agentpool02
+
       containers:
       - name: app
-        image: yourregistry.azurecr.io/myapp:latest
+        image: terzmyacr.azurecr.io/myapp:latest
         ports:
         - containerPort: 8080
           name: http
