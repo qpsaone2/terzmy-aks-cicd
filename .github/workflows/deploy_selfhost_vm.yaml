@@ -57,7 +57,9 @@ jobs:
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
         fi
-      
+
+        echo "VERSION_TAG=${NEW_VERSION}" >> $GITHUB_OUTPUT
+        echo "✅ New version: ${NEW_VERSION}"
     
     - name: Login to ACR
       run: |
