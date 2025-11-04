@@ -1,0 +1,194 @@
+name: Build and Deploy to AKS (Self-Hosted Runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'dev'
+  push:
+    branches:
+      - main  # main 브랜치 푸시 시 자동 배포 (선택사항)
+    paths:
+      - 'app/**'  # app 폴더 변경 시만 트리거 (선택사항)
+
+env:
+  ACR_LOGIN_SERVER: acrhyosungdev.azurecr.io
+  ACR_NAME: acrhyosungdev
+  IMAGE_NAME: myapp
+  AKS_CLUSTER: aks-hyosung-dev
+  AKS_RESOURCE_GROUP: rg-hyosung-dev
+  NAMESPACE: dev
+
+jobs:
+  build:
+    name: Build and Push Image
+    runs-on: self-hosted
+    outputs:
+      version_tag: ${{ steps.version.outputs.VERSION_TAG }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Generate Version Tag
+      id: version
+      run: |
+        LATEST_VERSION=$(az acr repository show-tags \
+          --name ${{ secrets.ACR_NAME }} \
+          --repository $IMAGE_NAME \
+          --orderby time_desc \
+          --output tsv 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+        
+        if [ -z "$LATEST_VERSION" ]; then
+          NEW_VERSION="v1.0.1"
+        else
+          MAJOR=$(echo $LATEST_VERSION | cut -d. -f1 | sed 's/v//')
+          MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
+          PATCH=$(echo $LATEST_VERSION | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+        fi
+        
+        echo "VERSION_TAG=${NEW_VERSION}" >> $GITHUB_OUTPUT
+        echo "✅ New version: ${NEW_VERSION}"
+    
+    - name: Login to ACR
+      run: |
+        az acr login --name ${{ secrets.ACR_NAME }}
+    
+    - name: Build Docker Image
+      run: |
+        cd app
+        docker build \
+          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:latest \
+          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }} \
+          .
+        
+        echo "✅ Built image with tags:"
+        echo "  - latest"
+        echo "  - ${{ steps.version.outputs.VERSION_TAG }}"
+    
+    - name: Push Image to ACR
+      run: |
+        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:latest
+        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }}
+        
+        echo "✅ Pushed images:"
+        echo "  - latest"
+        echo "  - ${{ steps.version.outputs.VERSION_TAG }}"
+    
+    - name: Build Summary
+      run: |
+        echo "=========================================="
+        echo "✅ Build Completed!"
+        echo "=========================================="
+        echo ""
+        echo "📦 Version: ${{ steps.version.outputs.VERSION_TAG }}"
+        echo "🏷️  Tags: latest, ${{ steps.version.outputs.VERSION_TAG }}"
+        echo ""
+
+  deploy:
+    name: Deploy to AKS
+    runs-on: self-hosted
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set AKS Context
+      run: |
+        az aks get-credentials \
+          --resource-group ${{ env.AKS_RESOURCE_GROUP }} \
+          --name ${{ env.AKS_CLUSTER }} \
+          --overwrite-existing
+    
+    - name: Test Kubernetes Connection
+      run: |
+        kubectl get nodes
+        kubectl get namespaces
+    
+    - name: Create Namespace
+      run: |
+        kubectl apply -f k8s/namespace.yaml
+    
+    - name: Deploy StorageClass
+      run: |
+        if ! kubectl get storageclass azureblob-fuse-premium > /dev/null 2>&1; then
+          echo "Creating StorageClass..."
+          kubectl apply -f k8s/storageclass.yaml
+        else
+          echo "✅ StorageClass already exists"
+        fi
+    
+    - name: Deploy PVC (Dynamic Provisioning)
+      run: |
+        kubectl apply -f k8s/pvc.yaml
+        
+        echo "⏳ Waiting for PVC to be Bound (auto-creating PV and Blob Container)..."
+        kubectl wait --for=condition=Bound pvc/blob-pvc -n dev --timeout=120s || \
+          (kubectl describe pvc blob-pvc -n dev && exit 1)
+        
+        echo "✅ PVC Bound - Blob Container automatically created!"
+        
+        # 생성된 PV 확인
+        PV_NAME=$(kubectl get pvc blob-pvc -n dev -o jsonpath='{.spec.volumeName}')
+        echo "📦 Auto-created PV: $PV_NAME"
+    
+    - name: Deploy Application
+      run: |
+        VERSION_TAG="${{ needs.build.outputs.version_tag }}"
+        
+        sed -i "s|image: .*/myapp:.*|image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$VERSION_TAG|g" k8s/deployment.yaml
+        
+        kubectl apply -f k8s/deployment.yaml
+        
+        echo "✅ Deployed version: $VERSION_TAG"
+    
+    - name: Deploy Service
+      run: |
+        kubectl apply -f k8s/service.yaml
+    
+    - name: Check Rollout Status
+      run: |
+        kubectl rollout status deployment/app-deployment -n $NAMESPACE --timeout=5m
+    
+    - name: Display Deployment Info
+      run: |
+        echo "=========================================="
+        echo "✅ Deployment Successful!"
+        echo "=========================================="
+        echo ""
+        echo "📦 Deployed Version: ${{ needs.build.outputs.version_tag }}"
+        echo ""
+        
+        echo "=== Pods ==="
+        kubectl get pods -n $NAMESPACE -l app=myapp -o wide
+        
+        echo ""
+        echo "=== Service ==="
+        kubectl get svc app-service -n $NAMESPACE
+        
+        echo ""
+        EXTERNAL_IP=$(kubectl get svc app-service -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        if [ -z "$EXTERNAL_IP" ]; then
+          echo "⏳ External IP pending..."
+        else
+          echo "🌐 Access URL: http://$EXTERNAL_IP"
+        fi
+        
+        echo ""
+        echo "=== All Versions in ACR ==="
+        az acr repository show-tags \
+          --name ${{ secrets.ACR_NAME }} \
+          --repository $IMAGE_NAME \
+          --orderby time_desc \
+          --output table
+        
+        echo ""
+        echo "=== Pod Node Assignment ==="
+        kubectl get pods -n $NAMESPACE -l app=myapp -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,STATUS:.status.phase

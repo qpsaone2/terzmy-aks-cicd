@@ -1,3 +1,27 @@
+# # #==========================================================
+# # # Static provisioning
+# # #==========================================================
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: azureblob-fuse-premium
+# provisioner: blob.csi.azure.com
+# parameters:
+#   skuName: Standard_LRS
+# reclaimPolicy: Retain
+# volumeBindingMode: Immediate
+# mountOptions:
+#   - -o allow_other
+#   - --file-cache-timeout-in-seconds=120
+#   - --use-attr-cache=true
+#   - --cancel-list-on-mount-seconds=10
+#   - -o attr_timeout=120
+#   - -o entry_timeout=120
+#   - -o negative_timeout=120
+
+# #==========================================================
+# # Dynamic provisioning
+# #==========================================================
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -5,6 +29,8 @@ metadata:
 provisioner: blob.csi.azure.com
 parameters:
   skuName: Standard_LRS
+  storageAccount: sthyosungdev001      # ✅ 추가
+  resourceGroup: rg-hyosung-dev    # ✅ 추가
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
 mountOptions:

@@ -1,16 +1,35 @@
-# k8s/pvc.yaml
+# # #==========================================================
+# # # Static provisioning
+# # #==========================================================
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: blob-pvc
+#   namespace: dev
+#   labels:
+#     app: myapp
+# spec:
+#   accessModes:
+#     - ReadWriteMany
+#   storageClassName: ""  # ← 빈 문자열
+#   volumeName: blob-pv-static
+#   resources:
+#     requests:
+#       storage: 10Gi
+
+
+# #==========================================================
+# # Dynamic provisioning
+# #==========================================================
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: blob-pvc
   namespace: dev
-  labels:
-    app: myapp
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: ""  # ← 빈 문자열
-  volumeName: blob-pv-static
+  storageClassName: azureblob-fuse-premium
   resources:
     requests:
-      storage: 10Gi
+      storage: 5Gi
