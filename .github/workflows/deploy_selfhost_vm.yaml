@@ -146,7 +146,7 @@ jobs:
         kubectl apply -f k8s/pvc.yaml
         
         echo "⏳ Waiting for PVC to be Bound (auto-creating PV and Blob Container)..."
-        kubectl wait --for=condition=Bound pvc/blob-pvc -n dev --timeout=120s || \
+        kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/blob-pvc -n dev --timeout=120s || \
           (kubectl describe pvc blob-pvc -n dev && exit 1)
         
         echo "✅ PVC Bound - Blob Container automatically created!"
