@@ -7,15 +7,15 @@ on:
         description: 'Deployment environment'
         required: false
         default: 'dev'
-  push:
-    branches:
-      - main  # main 브랜치 푸시 시 자동 배포 (선택사항)
-    paths:
-      - 'app/**'  # app 폴더 변경 시만 트리거 (선택사항)
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'app/**'
 
 env:
   ACR_LOGIN_SERVER: acrhyosungdev.azurecr.io
-  ACR_NAME: acrhyosungdev
+  ACR_NAME: acrhyosungdev 
   IMAGE_NAME: myapp
   AKS_CLUSTER: aks-hyosung-dev
   AKS_RESOURCE_GROUP: rg-hyosung-dev
@@ -33,12 +33,18 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
+    - name: Login to Azure with Managed Identity
+      run: |
+        az login --identity
+        echo "✅ Logged in to Azure using VM Managed Identity"
     
     - name: Generate Version Tag
       id: version
       run: |
+        # secrets.ACR_NAME -> $ACR_NAME (env 변수 사용)
         LATEST_VERSION=$(az acr repository show-tags \
-          --name ${{ secrets.ACR_NAME }} \
+          --name $ACR_NAME \
           --repository $IMAGE_NAME \
           --orderby time_desc \
           --output tsv 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
@@ -58,7 +64,9 @@ jobs:
     
     - name: Login to ACR
       run: |
-        az acr login --name ${{ secrets.ACR_NAME }}
+        # secrets.ACR_NAME -> $ACR_NAME (env 변수 사용)
+        # az login --identity가 성공했으므로 이 명령은 Docker 인증 정보를 설정합니다.
+        az acr login --name $ACR_NAME
     
     - name: Build Docker Image
       run: |
@@ -100,8 +108,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    # --- 추가된 단계 ---
+    - name: Login to Azure with Managed Identity
+      run: |
+        az login --identity
+        echo "✅ Logged in to Azure using VM Managed Identity"
+    # ------------------
+    
     - name: Set AKS Context
       run: |
+        # 선행 az login으로 인해 이 명령이 MI 권한으로 실행됩니다.
         az aks get-credentials \
           --resource-group ${{ env.AKS_RESOURCE_GROUP }} \
           --name ${{ env.AKS_CLUSTER }} \
@@ -135,7 +151,6 @@ jobs:
         
         echo "✅ PVC Bound - Blob Container automatically created!"
         
-        # 생성된 PV 확인
         PV_NAME=$(kubectl get pvc blob-pvc -n dev -o jsonpath='{.spec.volumeName}')
         echo "📦 Auto-created PV: $PV_NAME"
     
@@ -184,7 +199,7 @@ jobs:
         echo ""
         echo "=== All Versions in ACR ==="
         az acr repository show-tags \
-          --name ${{ secrets.ACR_NAME }} \
+          --name $ACR_NAME \
           --repository $IMAGE_NAME \
           --orderby time_desc \
           --output table
