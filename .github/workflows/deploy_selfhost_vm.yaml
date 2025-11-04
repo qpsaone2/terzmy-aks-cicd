@@ -127,12 +127,8 @@ jobs:
     
     - name: Deploy StorageClass
       run: |
-        if ! kubectl get storageclass azureblob-fuse-premium > /dev/null 2>&1; then
-          echo "Creating StorageClass..."
-          kubectl apply -f k8s/storageclass.yaml
-        else
-          echo "✅ StorageClass already exists"
-        fi
+        echo "Applying StorageClass (updates if exists)..."
+        kubectl apply -f k8s/storageclass.yaml
     
     - name: Deploy PVC (Dynamic Provisioning)
       run: |

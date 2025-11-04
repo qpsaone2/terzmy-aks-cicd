@@ -29,8 +29,6 @@ metadata:
 provisioner: blob.csi.azure.com
 parameters:
   skuName: Standard_LRS
-  storageAccount: sthyosungdev001      # ✅ 추가
-  resourceGroup: rg-hyosung-dev    # ✅ 추가
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
 mountOptions:
