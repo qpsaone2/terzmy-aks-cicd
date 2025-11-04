@@ -20,7 +20,7 @@ spec:
 
       # NodeSelector: agentpool02에만 배포
       nodeSelector:
-        agentpool: agentpool02
+        agentpool: agentpool1
 
       containers:
       - name: app

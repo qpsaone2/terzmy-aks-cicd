@@ -42,7 +42,6 @@ jobs:
     - name: Generate Version Tag
       id: version
       run: |
-        # secrets.ACR_NAME -> $ACR_NAME (env 변수 사용)
         LATEST_VERSION=$(az acr repository show-tags \
           --name $ACR_NAME \
           --repository $IMAGE_NAME \
@@ -58,14 +57,10 @@ jobs:
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
         fi
-        
-        echo "VERSION_TAG=${NEW_VERSION}" >> $GITHUB_OUTPUT
-        echo "✅ New version: ${NEW_VERSION}"
+      
     
     - name: Login to ACR
       run: |
-        # secrets.ACR_NAME -> $ACR_NAME (env 변수 사용)
-        # az login --identity가 성공했으므로 이 명령은 Docker 인증 정보를 설정합니다.
         az acr login --name $ACR_NAME
     
     - name: Build Docker Image
@@ -108,16 +103,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    # --- 추가된 단계 ---
     - name: Login to Azure with Managed Identity
       run: |
         az login --identity
-        echo "✅ Logged in to Azure using VM Managed Identity"
-    # ------------------
-    
+
     - name: Set AKS Context
       run: |
-        # 선행 az login으로 인해 이 명령이 MI 권한으로 실행됩니다.
         az aks get-credentials \
           --resource-group ${{ env.AKS_RESOURCE_GROUP }} \
           --name ${{ env.AKS_CLUSTER }} \

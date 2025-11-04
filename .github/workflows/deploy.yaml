@@ -1,238 +1,238 @@
-name: Build and Deploy to AKS
+# name: Build and Deploy to AKS
 
-# on:
-#   workflow_dispatch:
-#     inputs:
-#       environment:
-#         description: 'Deployment environment'
-#         required: false
-#         default: 'dev'
+# # on:
+# #   workflow_dispatch:
+# #     inputs:
+# #       environment:
+# #         description: 'Deployment environment'
+# #         required: false
+# #         default: 'dev'
 
-env:
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-  ACR_NAME: ${{ secrets.ACR_NAME }}
-  IMAGE_NAME: myapp
-  AKS_CLUSTER: ${{ secrets.AKS_CLUSTER_NAME }}
-  AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
-  NAMESPACE: dev
-  STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
-  STORAGE_ACCOUNT_KEY: ${{ secrets.STORAGE_ACCOUNT_KEY }}
+# env:
+#   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+#   ACR_NAME: ${{ secrets.ACR_NAME }}
+#   IMAGE_NAME: myapp
+#   AKS_CLUSTER: ${{ secrets.AKS_CLUSTER_NAME }}
+#   AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+#   NAMESPACE: dev
+#   STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+#   STORAGE_ACCOUNT_KEY: ${{ secrets.STORAGE_ACCOUNT_KEY }}
 
-jobs:
-  build:
-    name: Build and Push Image
-    runs-on: ubuntu-latest
-    outputs:
-      version_tag: ${{ steps.version.outputs.VERSION_TAG }}
+# jobs:
+#   build:
+#     name: Build and Push Image
+#     runs-on: ubuntu-latest
+#     outputs:
+#       version_tag: ${{ steps.version.outputs.VERSION_TAG }}
     
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+#     steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
+#       with:
+#         fetch-depth: 0
     
-    - name: Generate Version Tag
-      id: version
-      run: |
-        LATEST_VERSION=$(az acr repository show-tags \
-          --name ${{ secrets.ACR_NAME }} \
-          --repository $IMAGE_NAME \
-          --orderby time_desc \
-          --output tsv 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+#     - name: Generate Version Tag
+#       id: version
+#       run: |
+#         LATEST_VERSION=$(az acr repository show-tags \
+#           --name ${{ secrets.ACR_NAME }} \
+#           --repository $IMAGE_NAME \
+#           --orderby time_desc \
+#           --output tsv 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
         
-        if [ -z "$LATEST_VERSION" ]; then
-          NEW_VERSION="v1.0.1"
-        else
-          MAJOR=$(echo $LATEST_VERSION | cut -d. -f1 | sed 's/v//')
-          MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
-          PATCH=$(echo $LATEST_VERSION | cut -d. -f3)
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
-        fi
+#         if [ -z "$LATEST_VERSION" ]; then
+#           NEW_VERSION="v1.0.1"
+#         else
+#           MAJOR=$(echo $LATEST_VERSION | cut -d. -f1 | sed 's/v//')
+#           MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
+#           PATCH=$(echo $LATEST_VERSION | cut -d. -f3)
+#           NEW_PATCH=$((PATCH + 1))
+#           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+#         fi
         
-        echo "VERSION_TAG=${NEW_VERSION}" >> $GITHUB_OUTPUT
-        echo "✅ New version: ${NEW_VERSION}"
+#         echo "VERSION_TAG=${NEW_VERSION}" >> $GITHUB_OUTPUT
+#         echo "✅ New version: ${NEW_VERSION}"
     
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+#     - name: Azure Login
+#       uses: azure/login@v1
+#       with:
+#         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
-    - name: Login to ACR
-      run: |
-        az acr login --name ${{ secrets.ACR_NAME }}
+#     - name: Login to ACR
+#       run: |
+#         az acr login --name ${{ secrets.ACR_NAME }}
     
-    - name: Build Docker Image
-      run: |
-        cd app
-        docker build \
-          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:latest \
-          -t $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }} \
-          .
+#     - name: Build Docker Image
+#       run: |
+#         cd app
+#         docker build \
+#           -t $ACR_LOGIN_SERVER/$IMAGE_NAME:latest \
+#           -t $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }} \
+#           .
         
-        echo "✅ Built image with tags:"
-        echo "  - latest"
-        echo "  - ${{ steps.version.outputs.VERSION_TAG }}"
+#         echo "✅ Built image with tags:"
+#         echo "  - latest"
+#         echo "  - ${{ steps.version.outputs.VERSION_TAG }}"
     
-    - name: Push Image to ACR
-      run: |
-        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:latest
-        docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }}
+#     - name: Push Image to ACR
+#       run: |
+#         docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:latest
+#         docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:${{ steps.version.outputs.VERSION_TAG }}
         
-        echo "✅ Pushed images:"
-        echo "  - latest"
-        echo "  - ${{ steps.version.outputs.VERSION_TAG }}"
+#         echo "✅ Pushed images:"
+#         echo "  - latest"
+#         echo "  - ${{ steps.version.outputs.VERSION_TAG }}"
     
-    - name: Build Summary
-      run: |
-        echo "=========================================="
-        echo "✅ Build Completed!"
-        echo "=========================================="
-        echo ""
-        echo "📦 Version: ${{ steps.version.outputs.VERSION_TAG }}"
-        echo "🏷️  Tags: latest, ${{ steps.version.outputs.VERSION_TAG }}"
-        echo ""
+#     - name: Build Summary
+#       run: |
+#         echo "=========================================="
+#         echo "✅ Build Completed!"
+#         echo "=========================================="
+#         echo ""
+#         echo "📦 Version: ${{ steps.version.outputs.VERSION_TAG }}"
+#         echo "🏷️  Tags: latest, ${{ steps.version.outputs.VERSION_TAG }}"
+#         echo ""
 
-  deploy:
-    name: Deploy to AKS
-    runs-on: ubuntu-latest
-    needs: build
+#   deploy:
+#     name: Deploy to AKS
+#     runs-on: ubuntu-latest
+#     needs: build
     
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+#     steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
     
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+#     - name: Azure Login
+#       uses: azure/login@v1
+#       with:
+#         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
-    - name: Install kubelogin
-      run: |
-        if command -v kubelogin &> /dev/null; then
-          echo "✅ kubelogin already installed"
-          kubelogin --version
-        else
-          echo "📦 Installing kubelogin..."
-          curl -LO https://github.com/Azure/kubelogin/releases/download/v0.1.4/kubelogin-linux-amd64.zip
-          unzip kubelogin-linux-amd64.zip
-          sudo mv bin/linux_amd64/kubelogin /usr/local/bin/
-          sudo chmod +x /usr/local/bin/kubelogin
-          kubelogin --version
-        fi
+#     - name: Install kubelogin
+#       run: |
+#         if command -v kubelogin &> /dev/null; then
+#           echo "✅ kubelogin already installed"
+#           kubelogin --version
+#         else
+#           echo "📦 Installing kubelogin..."
+#           curl -LO https://github.com/Azure/kubelogin/releases/download/v0.1.4/kubelogin-linux-amd64.zip
+#           unzip kubelogin-linux-amd64.zip
+#           sudo mv bin/linux_amd64/kubelogin /usr/local/bin/
+#           sudo chmod +x /usr/local/bin/kubelogin
+#           kubelogin --version
+#         fi
     
-    - name: Set AKS Context
-      uses: azure/aks-set-context@v3
-      with:
-        cluster-name: ${{ env.AKS_CLUSTER }}
-        resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+#     - name: Set AKS Context
+#       uses: azure/aks-set-context@v3
+#       with:
+#         cluster-name: ${{ env.AKS_CLUSTER }}
+#         resource-group: ${{ env.AKS_RESOURCE_GROUP }}
     
-    - name: Convert kubeconfig for Azure AD
-      run: |
-        kubelogin convert-kubeconfig -l azurecli
+#     - name: Convert kubeconfig for Azure AD
+#       run: |
+#         kubelogin convert-kubeconfig -l azurecli
     
-    - name: Test Kubernetes Connection
-      run: |
-        kubectl get nodes
-        kubectl get namespaces
+#     - name: Test Kubernetes Connection
+#       run: |
+#         kubectl get nodes
+#         kubectl get namespaces
     
-    - name: Create Namespace
-      run: |
-        kubectl apply -f k8s/namespace.yaml
+#     - name: Create Namespace
+#       run: |
+#         kubectl apply -f k8s/namespace.yaml
     
-    - name: Create/Update Kubernetes Secret
-      run: |
-        kubectl create secret generic azure-storage-secret \
-          --namespace=$NAMESPACE \
-          --from-literal=azurestorageaccountname=${{ secrets.STORAGE_ACCOUNT_NAME }} \
-          --from-literal=azurestorageaccountkey=${{ secrets.STORAGE_ACCOUNT_KEY }} \
-          --dry-run=client -o yaml | kubectl apply -f -
+#     - name: Create/Update Kubernetes Secret
+#       run: |
+#         kubectl create secret generic azure-storage-secret \
+#           --namespace=$NAMESPACE \
+#           --from-literal=azurestorageaccountname=${{ secrets.STORAGE_ACCOUNT_NAME }} \
+#           --from-literal=azurestorageaccountkey=${{ secrets.STORAGE_ACCOUNT_KEY }} \
+#           --dry-run=client -o yaml | kubectl apply -f -
     
-    - name: Deploy StorageClass
-      run: |
-        if ! kubectl get storageclass azureblob-fuse-premium > /dev/null 2>&1; then
-          echo "Creating StorageClass..."
-          kubectl create -f k8s/storageclass.yaml
-        else
-          echo "✅ StorageClass already exists"
-        fi
+#     - name: Deploy StorageClass
+#       run: |
+#         if ! kubectl get storageclass azureblob-fuse-premium > /dev/null 2>&1; then
+#           echo "Creating StorageClass..."
+#           kubectl create -f k8s/storageclass.yaml
+#         else
+#           echo "✅ StorageClass already exists"
+#         fi
     
-    - name: Deploy PersistentVolume
-      run: |
-        if ! kubectl get pv blob-pv-static > /dev/null 2>&1; then
-          echo "Creating Static PersistentVolume..."
-          kubectl apply -f k8s/pv.yaml
-        else
-          echo "✅ PersistentVolume already exists"
-        fi
+#     - name: Deploy PersistentVolume
+#       run: |
+#         if ! kubectl get pv blob-pv-static > /dev/null 2>&1; then
+#           echo "Creating Static PersistentVolume..."
+#           kubectl apply -f k8s/pv.yaml
+#         else
+#           echo "✅ PersistentVolume already exists"
+#         fi
     
-    - name: Deploy PVC
-      run: |
-        kubectl apply -f k8s/pvc.yaml
+#     - name: Deploy PVC
+#       run: |
+#         kubectl apply -f k8s/pvc.yaml
         
-        # 잠시 대기 후 상태 확인
-        sleep 3
-        PVC_STATUS=$(kubectl get pvc blob-pvc -n dev -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+#         # 잠시 대기 후 상태 확인
+#         sleep 3
+#         PVC_STATUS=$(kubectl get pvc blob-pvc -n dev -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
         
-        if [ "$PVC_STATUS" = "Bound" ]; then
-          echo "✅ PVC is already Bound"
-        else
-          echo "⏳ Waiting for PVC to be Bound..."
-          kubectl wait --for=condition=Bound pvc/blob-pvc -n dev --timeout=60s || \
-            (kubectl describe pvc blob-pvc -n dev && exit 1)
-        fi
+#         if [ "$PVC_STATUS" = "Bound" ]; then
+#           echo "✅ PVC is already Bound"
+#         else
+#           echo "⏳ Waiting for PVC to be Bound..."
+#           kubectl wait --for=condition=Bound pvc/blob-pvc -n dev --timeout=60s || \
+#             (kubectl describe pvc blob-pvc -n dev && exit 1)
+#         fi
     
-    - name: Deploy Application
-      run: |
-        VERSION_TAG="${{ needs.build.outputs.version_tag }}"
+#     - name: Deploy Application
+#       run: |
+#         VERSION_TAG="${{ needs.build.outputs.version_tag }}"
         
-        # deployment.yaml의 이미지 태그 업데이트
-        sed -i "s|image: terzmyacr.azurecr.io/myapp:.*|image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$VERSION_TAG|g" k8s/deployment.yaml
+#         # deployment.yaml의 이미지 태그 업데이트
+#         sed -i "s|image: terzmyacr.azurecr.io/myapp:.*|image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$VERSION_TAG|g" k8s/deployment.yaml
         
-        kubectl apply -f k8s/deployment.yaml
+#         kubectl apply -f k8s/deployment.yaml
         
-        echo "✅ Deployed version: $VERSION_TAG"
+#         echo "✅ Deployed version: $VERSION_TAG"
     
-    - name: Deploy Service
-      run: |
-        kubectl apply -f k8s/service.yaml
+#     - name: Deploy Service
+#       run: |
+#         kubectl apply -f k8s/service.yaml
     
-    - name: Check Rollout Status
-      run: |
-        kubectl rollout status deployment/app-deployment -n $NAMESPACE --timeout=5m
+#     - name: Check Rollout Status
+#       run: |
+#         kubectl rollout status deployment/app-deployment -n $NAMESPACE --timeout=5m
     
-    - name: Display Deployment Info
-      run: |
-        echo "=========================================="
-        echo "✅ Deployment Successful!"
-        echo "=========================================="
-        echo ""
-        echo "📦 Deployed Version: ${{ needs.build.outputs.version_tag }}"
-        echo ""
+#     - name: Display Deployment Info
+#       run: |
+#         echo "=========================================="
+#         echo "✅ Deployment Successful!"
+#         echo "=========================================="
+#         echo ""
+#         echo "📦 Deployed Version: ${{ needs.build.outputs.version_tag }}"
+#         echo ""
         
-        echo "=== Pods ==="
-        kubectl get pods -n $NAMESPACE -l app=myapp -o wide
+#         echo "=== Pods ==="
+#         kubectl get pods -n $NAMESPACE -l app=myapp -o wide
         
-        echo ""
-        echo "=== Service ==="
-        kubectl get svc app-service -n $NAMESPACE
+#         echo ""
+#         echo "=== Service ==="
+#         kubectl get svc app-service -n $NAMESPACE
         
-        echo ""
-        EXTERNAL_IP=$(kubectl get svc app-service -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-        if [ -z "$EXTERNAL_IP" ]; then
-          echo "⏳ External IP pending..."
-        else
-          echo "🌐 Access URL: http://$EXTERNAL_IP"
-        fi
+#         echo ""
+#         EXTERNAL_IP=$(kubectl get svc app-service -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+#         if [ -z "$EXTERNAL_IP" ]; then
+#           echo "⏳ External IP pending..."
+#         else
+#           echo "🌐 Access URL: http://$EXTERNAL_IP"
+#         fi
         
-        echo ""
-        echo "=== All Versions in ACR ==="
-        az acr repository show-tags \
-          --name ${{ secrets.ACR_NAME }} \
-          --repository $IMAGE_NAME \
-          --orderby time_desc \
-          --output table
+#         echo ""
+#         echo "=== All Versions in ACR ==="
+#         az acr repository show-tags \
+#           --name ${{ secrets.ACR_NAME }} \
+#           --repository $IMAGE_NAME \
+#           --orderby time_desc \
+#           --output table
         
-        echo ""
-        echo "=== Pod Node Assignment ==="
-        kubectl get pods -n $NAMESPACE -l app=myapp -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,STATUS:.status.phase
+#         echo ""
+#         echo "=== Pod Node Assignment ==="
+#         kubectl get pods -n $NAMESPACE -l app=myapp -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,STATUS:.status.phase
